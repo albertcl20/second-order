@@ -4,6 +4,11 @@ import { Screen } from '@/src/components/ui/Screen';
 import { AppText } from '@/src/components/ui/AppText';
 import { rankStories } from '@/src/lib/story-intelligence';
 import { useAppStore } from '@/src/store/useAppStore';
+import { mockStories } from '@/src/fixtures/stories';
+
+export function generateStaticParams() {
+  return mockStories.map((story) => ({ storyId: story.id }));
+}
 
 export default function StoryRoute() {
   const { storyId } = useLocalSearchParams<{ storyId: string }>();
