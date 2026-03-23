@@ -1,0 +1,13 @@
+{
+  "buildCommand": "npm run vercel-build",
+  "outputDirectory": "dist",
+  "installCommand": "npm install",
+  "framework": null,
+  "cleanUrls": true,
+  "rewrites": [
+    {
+      "source": "/story/:storyId",
+      "destination": "/story/[storyId].html"
+    }
+  ]
+}
