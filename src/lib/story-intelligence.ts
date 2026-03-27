@@ -45,6 +45,19 @@ export type ThemeSummary = {
   watchSignals: string[];
 };
 
+export type WatchlistSummary = {
+  token: string;
+  count: number;
+  average: number;
+  strongestStoryId: string;
+  strongestTitle: string;
+  strongestReason: string;
+  strongestTopic: string;
+  beneficiaries: string[];
+  pressurePoints: string[];
+  watchItems: string[];
+};
+
 export function getThemeSummary(preferences: Preferences): ThemeSummary[] {
   const ranked = rankStories(preferences);
 
@@ -112,6 +125,57 @@ export function getThemeSummary(preferences: Preferences): ThemeSummary[] {
       watchSignals: pickTopTokens(bucket.watchSignals, 2),
     }))
     .sort((a, b) => b.average - a.average);
+}
+
+export function getWatchlistSummary(preferences: Preferences): WatchlistSummary[] {
+  const ranked = rankStories(preferences);
+
+  return preferences.watchTokens
+    .map((token) => {
+      const matches = ranked.filter((story) =>
+        story.watchTokens.some((item) => item.toLowerCase().includes(token.toLowerCase())),
+      );
+
+      if (!matches.length) {
+        return {
+          token,
+          count: 0,
+          average: 0,
+          strongestStoryId: '',
+          strongestTitle: 'No matching briefing yet',
+          strongestReason: 'Add more editorial coverage for this token',
+          strongestTopic: 'Unmapped',
+          beneficiaries: [],
+          pressurePoints: [],
+          watchItems: [],
+        } satisfies WatchlistSummary;
+      }
+
+      const strongest = matches[0];
+      const beneficiaries = new Map<string, number>();
+      const pressurePoints = new Map<string, number>();
+      const watchItems = new Map<string, number>();
+
+      matches.forEach((story) => {
+        story.analysis.whoBenefits.forEach((item) => incrementToken(beneficiaries, item));
+        story.analysis.whoLoses.forEach((item) => incrementToken(pressurePoints, item));
+        story.analysis.whatToWatch.forEach((item) => incrementToken(watchItems, item));
+      });
+
+      return {
+        token,
+        count: matches.length,
+        average: Math.round(matches.reduce((total, story) => total + story.relevanceScore, 0) / matches.length),
+        strongestStoryId: strongest.id,
+        strongestTitle: strongest.title,
+        strongestReason: strongest.relevanceReasons[0] ?? 'current lens match',
+        strongestTopic: strongest.topic,
+        beneficiaries: pickTopTokens(beneficiaries, 2),
+        pressurePoints: pickTopTokens(pressurePoints, 2),
+        watchItems: pickTopTokens(watchItems, 3),
+      } satisfies WatchlistSummary;
+    })
+    .sort((a, b) => b.average - a.average || b.count - a.count || a.token.localeCompare(b.token));
 }
 
 export function getLensSummary(preferences: Preferences) {
