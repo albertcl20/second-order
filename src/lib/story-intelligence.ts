@@ -1,4 +1,4 @@
-import { mockStories } from '@/src/fixtures/stories';
+import { validatedStories } from '@/src/fixtures/story-feed';
 import { InterestFocus, RoleFocus, Story } from '@/src/types/story';
 
 type Preferences = {
@@ -23,7 +23,7 @@ const interestTagMap: Record<InterestFocus, string[]> = {
 };
 
 export function rankStories(preferences: Preferences) {
-  return [...mockStories]
+  return [...validatedStories]
     .map((story) => scoreStory(story, preferences))
     .sort((a, b) => b.relevanceScore - a.relevanceScore || b.publishedAt.localeCompare(a.publishedAt));
 }
@@ -32,32 +32,102 @@ export function getSavedStories(preferences: Preferences) {
   return rankStories(preferences).filter((story) => story.isSaved);
 }
 
-export function getThemeSummary(preferences: Preferences) {
+export type ThemeSummary = {
+  label: string;
+  count: number;
+  average: number;
+  strongest: string;
+  strongestStoryId: string;
+  strongestReason: string;
+  watchDrivers: string[];
+  benefitDrivers: string[];
+  riskDrivers: string[];
+  watchSignals: string[];
+};
+
+export function getThemeSummary(preferences: Preferences): ThemeSummary[] {
   const ranked = rankStories(preferences);
 
-  const buckets = new Map<string, { label: string; count: number; average: number; strongest: string }>();
+  const buckets = new Map<
+    string,
+    {
+      label: string;
+      count: number;
+      total: number;
+      strongest: string;
+      strongestStoryId: string;
+      strongestScore: number;
+      strongestReason: string;
+      watchDrivers: Map<string, number>;
+      benefitDrivers: Map<string, number>;
+      riskDrivers: Map<string, number>;
+      watchSignals: Map<string, number>;
+    }
+  >();
 
   ranked.forEach((story) => {
-    const existing = buckets.get(story.topic);
-    if (!existing) {
-      buckets.set(story.topic, {
-        label: story.topic,
-        count: 1,
-        average: story.relevanceScore,
-        strongest: story.title,
-      });
-      return;
+    const existing = buckets.get(story.topic) ?? {
+      label: story.topic,
+      count: 0,
+      total: 0,
+      strongest: story.title,
+      strongestStoryId: story.id,
+      strongestScore: -1,
+      strongestReason: story.relevanceReasons[0] ?? 'current lens match',
+      watchDrivers: new Map<string, number>(),
+      benefitDrivers: new Map<string, number>(),
+      riskDrivers: new Map<string, number>(),
+      watchSignals: new Map<string, number>(),
+    };
+
+    existing.count += 1;
+    existing.total += story.relevanceScore;
+
+    if (story.relevanceScore > existing.strongestScore) {
+      existing.strongest = story.title;
+      existing.strongestStoryId = story.id;
+      existing.strongestScore = story.relevanceScore;
+      existing.strongestReason = story.relevanceReasons[0] ?? 'current lens match';
     }
 
-    buckets.set(story.topic, {
-      label: existing.label,
-      count: existing.count + 1,
-      average: Math.round((existing.average * existing.count + story.relevanceScore) / (existing.count + 1)),
-      strongest: existing.average >= story.relevanceScore ? existing.strongest : story.title,
-    });
+    story.watchTokens.forEach((token) => incrementToken(existing.watchDrivers, token));
+    story.analysis.whoBenefits.forEach((item) => incrementToken(existing.benefitDrivers, item));
+    story.analysis.whoLoses.forEach((item) => incrementToken(existing.riskDrivers, item));
+    story.analysis.whatToWatch.forEach((item) => incrementToken(existing.watchSignals, item));
+
+    buckets.set(story.topic, existing);
   });
 
-  return [...buckets.values()].sort((a, b) => b.average - a.average);
+  return [...buckets.values()]
+    .map((bucket) => ({
+      label: bucket.label,
+      count: bucket.count,
+      average: Math.round(bucket.total / bucket.count),
+      strongest: bucket.strongest,
+      strongestStoryId: bucket.strongestStoryId,
+      strongestReason: bucket.strongestReason,
+      watchDrivers: pickTopTokens(bucket.watchDrivers, 3),
+      benefitDrivers: pickTopTokens(bucket.benefitDrivers, 2),
+      riskDrivers: pickTopTokens(bucket.riskDrivers, 2),
+      watchSignals: pickTopTokens(bucket.watchSignals, 2),
+    }))
+    .sort((a, b) => b.average - a.average);
+}
+
+export function getLensSummary(preferences: Preferences) {
+  const ranked = rankStories(preferences);
+  const topStory = ranked[0];
+  const savedCount = ranked.filter((story) => story.isSaved).length;
+  const averageScore = ranked.length
+    ? Math.round(ranked.reduce((total, story) => total + story.relevanceScore, 0) / ranked.length)
+    : 0;
+
+  return {
+    topStory,
+    savedCount,
+    averageScore,
+    mostRelevantTopic: topStory?.topic,
+  };
 }
 
 function scoreStory(story: Story, preferences: Preferences): RankedStory {
@@ -105,4 +175,15 @@ function labelSignal(signal: string) {
   if (signal === 'product') return 'product';
   if (signal === 'operatingRisk') return 'risk';
   return 'distribution';
+}
+
+function incrementToken(bucket: Map<string, number>, token: string) {
+  bucket.set(token, (bucket.get(token) ?? 0) + 1);
+}
+
+function pickTopTokens(bucket: Map<string, number>, limit: number) {
+  return [...bucket.entries()]
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .slice(0, limit)
+    .map(([token]) => token);
 }
