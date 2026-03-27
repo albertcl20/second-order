@@ -1,12 +1,13 @@
-import { Stack } from 'expo-router';
+import { Redirect, Stack, useSegments } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
-import { useEffect, useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, TextInput, View } from 'react-native';
+import { useEffect } from 'react';
+import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import 'react-native-reanimated';
 import { useAppStore } from '@/src/store/useAppStore';
 import { AppText } from '@/src/components/ui/AppText';
 import { colors, radius, spacing } from '@/src/theme/tokens';
+import { previewEnabled } from '@/src/lib/runtime-config';
 
 SplashScreen.preventAutoHideAsync();
 
@@ -14,9 +15,11 @@ export default function RootLayout() {
   const hydrate = useAppStore((state) => state.hydrate);
   const hydrated = useAppStore((state) => state.hydrated);
   const unlocked = useAppStore((state) => state.unlocked);
+  const onboardingCompleted = useAppStore((state) => state.onboardingCompleted);
   const unlock = useAppStore((state) => state.unlock);
-  const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
+  const segments = useSegments();
+  const isMarketingRoute = segments[0] === undefined;
+  const isOnboardingRoute = segments[0] === 'onboarding';
 
   useEffect(() => {
     hydrate().finally(() => SplashScreen.hideAsync());
@@ -31,49 +34,70 @@ export default function RootLayout() {
     );
   }
 
-  if (!unlocked) {
+  if (!isMarketingRoute && !unlocked) {
     return (
       <View style={styles.gateScreen}>
         <StatusBar style="dark" />
         <View style={styles.gateCard}>
           <AppText variant="caption">Private build</AppText>
           <AppText variant="title">Second Order</AppText>
-          <AppText variant="body">Enter the preview password to open the current build.</AppText>
-          <TextInput
-            value={password}
-            onChangeText={(value) => {
-              setPassword(value);
-              if (error) setError('');
-            }}
-            placeholder="Password"
-            placeholderTextColor={colors.textSecondary}
-            secureTextEntry
-            style={styles.input}
-          />
-          {error ? <AppText variant="bodySmall">{error}</AppText> : null}
-          <Pressable
-            onPress={() => {
-              const ok = unlock(password);
-              if (!ok) setError('Wrong password. Try again.');
-            }}
-            style={styles.button}>
-            <AppText variant="body" style={styles.buttonLabel}>
-              Open preview
-            </AppText>
-          </Pressable>
+          <AppText variant="body">
+            This public build only exposes the marketing site. Product routes stay hidden until preview access is enabled at build time.
+          </AppText>
+          <AppText variant="bodySmall">
+            This replaces the old client-side password gate, which was only cosmetic and could leak via the bundled app.
+          </AppText>
+          {previewEnabled ? (
+            <Pressable
+              onPress={() => {
+                unlock();
+              }}
+              style={styles.button}>
+              <AppText variant="body" style={styles.buttonLabel}>
+                Open preview
+              </AppText>
+            </Pressable>
+          ) : null}
         </View>
       </View>
     );
   }
 
+  if (!isMarketingRoute && unlocked && !onboardingCompleted && !isOnboardingRoute) {
+    return <Redirect href="/onboarding" />;
+  }
+
   return (
     <>
       <StatusBar style="dark" />
-      <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: '#F5F3EE' } }}>
+      <Stack
+        screenOptions={{
+          headerShown: false,
+          contentStyle: { backgroundColor: colors.background },
+          headerStyle: { backgroundColor: colors.surface },
+          headerShadowVisible: false,
+          headerTintColor: colors.text,
+          headerTitleStyle: { fontWeight: '700' },
+        }}>
         <Stack.Screen name="(tabs)" />
-        <Stack.Screen name="story/[storyId]" options={{ headerShown: true, title: 'Story', presentation: 'card' }} />
+        <Stack.Screen name="onboarding" options={{ headerShown: false, presentation: 'card' }} />
+        <Stack.Screen
+          name="story/[storyId]"
+          options={{
+            headerShown: true,
+            title: 'Briefing',
+            presentation: 'card',
+          }}
+        />
         <Stack.Screen name="settings/methodology" options={{ headerShown: true, title: 'Methodology' }} />
-        <Stack.Screen name="modal/source-sheet" options={{ presentation: 'modal', headerShown: false }} />
+        <Stack.Screen
+          name="modal/source-sheet"
+          options={{
+            headerShown: true,
+            title: 'Sources',
+            presentation: 'modal',
+          }}
+        />
       </Stack>
     </>
   );
@@ -95,22 +119,13 @@ const styles = StyleSheet.create({
   },
   gateCard: {
     width: '100%',
-    maxWidth: 420,
+    maxWidth: 480,
     backgroundColor: colors.surface,
     borderRadius: radius.lg,
     borderWidth: 1,
     borderColor: colors.border,
     padding: spacing.xl,
     gap: spacing.md,
-  },
-  input: {
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: '#FFFFFF',
-    borderRadius: radius.md,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
-    color: colors.text,
   },
   button: {
     backgroundColor: colors.text,
