@@ -1,11 +1,13 @@
 import { validatedStories } from '@/src/fixtures/story-feed';
 import { InterestFocus, RoleFocus, Story } from '@/src/types/story';
+import { SubscriptionTier } from '@/src/store/useAppStore';
 
 type Preferences = {
   roleFocus: RoleFocus[];
   interestFocus: InterestFocus[];
   watchTokens: string[];
   savedStoryIds: string[];
+  subscriptionTier: SubscriptionTier;
 };
 
 export type RankedStory = Story & {
@@ -13,6 +15,23 @@ export type RankedStory = Story & {
   relevanceReasons: string[];
   isSaved: boolean;
 };
+
+export type FeedAccessSummary = {
+  isPremium: boolean;
+  freeStoryLimit: number;
+  freeThemeLimit: number;
+  savedStoryLimit: number;
+  visibleStories: RankedStory[];
+  lockedStories: RankedStory[];
+  visibleThemes: ThemeSummary[];
+  lockedThemes: ThemeSummary[];
+  savedStoriesRemaining: number;
+  savedStoriesAtLimit: boolean;
+};
+
+const FREE_STORY_LIMIT = 2;
+const FREE_THEME_LIMIT = 2;
+const FREE_SAVED_STORY_LIMIT = 3;
 
 const interestTagMap: Record<InterestFocus, string[]> = {
   AI: ['AI', 'enterprise-ai', 'model-routing', 'OpenAI', 'Anthropic'],
@@ -178,6 +197,16 @@ export function getWatchlistSummary(preferences: Preferences): WatchlistSummary[
     .sort((a, b) => b.average - a.average || b.count - a.count || a.token.localeCompare(b.token));
 }
 
+export type DailySignalSummary = {
+  headline: string;
+  editorNote: string;
+  opportunityLine: string;
+  riskLine: string;
+  watchLine: string;
+  confidenceLabel: string;
+  sourceStoryIds: string[];
+};
+
 export function getLensSummary(preferences: Preferences) {
   const ranked = rankStories(preferences);
   const topStory = ranked[0];
@@ -191,6 +220,63 @@ export function getLensSummary(preferences: Preferences) {
     savedCount,
     averageScore,
     mostRelevantTopic: topStory?.topic,
+  };
+}
+
+export function getDailySignalSummary(preferences: Preferences): DailySignalSummary | null {
+  const ranked = rankStories(preferences);
+  const topStories = ranked.slice(0, 3);
+
+  if (!topStories.length) {
+    return null;
+  }
+
+  const lead = topStories[0];
+  const sharedWinners = pickTopTokens(buildTokenMap(topStories.flatMap((story) => story.analysis.whoBenefits)), 2);
+  const sharedRisks = pickTopTokens(buildTokenMap(topStories.flatMap((story) => story.analysis.whoLoses)), 2);
+  const sharedWatch = pickTopTokens(buildTokenMap(topStories.flatMap((story) => story.analysis.whatToWatch)), 2);
+  const confidenceMix = summarizeConfidence(topStories.map((story) => story.analysis.confidence));
+
+  return {
+    headline: `${lead.topic} is setting the tone, but the real signal is how incentives are shifting around ${lead.watchTokens[0] ?? 'the current story set'}.`,
+    editorNote: `Today’s strongest briefings cluster around ${lead.topic.toLowerCase()} pressure, where ${lead.relevanceReasons[0] ?? 'your current lens'} is pulling the biggest downstream consequences to the top. Read the lead story first, then use the next two to pressure-test whether the shift is structural or just noise.`,
+    opportunityLine: sharedWinners.length
+      ? `Likely advantage is accruing to ${sharedWinners.join(' and ')}.`
+      : `Likely advantage is accruing to the actors with clearer distribution and operating leverage.`,
+    riskLine: sharedRisks.length
+      ? `Most exposed right now: ${sharedRisks.join(' and ')}.`
+      : `The main risk sits with teams relying on old distribution, weak positioning, or fragile unit economics.`,
+    watchLine: sharedWatch.length
+      ? `What to watch next: ${sharedWatch.join(' · ')}.`
+      : `What to watch next: follow the next enforcement, pricing, and distribution signals for confirmation.`,
+    confidenceLabel: confidenceMix,
+    sourceStoryIds: topStories.map((story) => story.id),
+  };
+}
+
+export function getFeedAccessSummary(preferences: Preferences): FeedAccessSummary {
+  const rankedStories = rankStories(preferences);
+  const themes = getThemeSummary(preferences);
+  const isPremium = preferences.subscriptionTier === 'Premium preview';
+  const visibleStories = isPremium ? rankedStories : rankedStories.slice(0, FREE_STORY_LIMIT);
+  const lockedStories = isPremium ? [] : rankedStories.slice(FREE_STORY_LIMIT);
+  const visibleThemes = isPremium ? themes : themes.slice(0, FREE_THEME_LIMIT);
+  const lockedThemes = isPremium ? [] : themes.slice(FREE_THEME_LIMIT);
+  const savedStoriesRemaining = isPremium
+    ? Number.POSITIVE_INFINITY
+    : Math.max(FREE_SAVED_STORY_LIMIT - preferences.savedStoryIds.length, 0);
+
+  return {
+    isPremium,
+    freeStoryLimit: FREE_STORY_LIMIT,
+    freeThemeLimit: FREE_THEME_LIMIT,
+    savedStoryLimit: FREE_SAVED_STORY_LIMIT,
+    visibleStories,
+    lockedStories,
+    visibleThemes,
+    lockedThemes,
+    savedStoriesRemaining,
+    savedStoriesAtLimit: !isPremium && preferences.savedStoryIds.length >= FREE_SAVED_STORY_LIMIT,
   };
 }
 
@@ -243,6 +329,21 @@ function labelSignal(signal: string) {
 
 function incrementToken(bucket: Map<string, number>, token: string) {
   bucket.set(token, (bucket.get(token) ?? 0) + 1);
+}
+
+function buildTokenMap(tokens: string[]) {
+  const bucket = new Map<string, number>();
+  tokens.forEach((token) => incrementToken(bucket, token));
+  return bucket;
+}
+
+function summarizeConfidence(confidenceLevels: string[]) {
+  const counts = buildTokenMap(confidenceLevels);
+  const lead = [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0]?.[0];
+
+  if (!lead) return 'Mixed confidence';
+  if (counts.size === 1) return lead;
+  return `${lead} leaning, mixed set`;
 }
 
 function pickTopTokens(bucket: Map<string, number>, limit: number) {
