@@ -52,26 +52,26 @@ export default function WatchlistRoute() {
   return (
     <Screen scroll>
       <View style={styles.header}>
-        <AppText variant="hero">Watchlist</AppText>
+        <AppText variant="hero">Following</AppText>
         <AppText variant="body">
-          Follow the companies, policy threads, and market surfaces you want Second Order to keep over-indexing on.
+          Keep up with the companies, technologies, and policy areas you care about most.
         </AppText>
       </View>
 
       <View style={styles.metricGrid}>
         <View style={styles.metricCard}>
-          <AppText variant="caption">Active tokens</AppText>
+          <AppText variant="caption">Following</AppText>
           <AppText variant="section">{watchTokens.length}</AppText>
-          <AppText variant="bodySmall">Themes you are intentionally biasing the briefing toward.</AppText>
+          <AppText variant="bodySmall">Items you want Second Order to keep in view.</AppText>
         </View>
         <View style={styles.metricCard}>
-          <AppText variant="caption">Briefings touched</AppText>
+          <AppText variant="caption">Stories matched</AppText>
           <AppText variant="section">{matchedStories.length}</AppText>
-          <AppText variant="bodySmall">Stories currently shaped by your watchlist.</AppText>
+          <AppText variant="bodySmall">Current stories tied to the names and areas you follow.</AppText>
         </View>
       </View>
 
-      <SectionCard eyebrow="Following" title="Active watchlist">
+      <SectionCard eyebrow="Following" title="What you follow">
         {watchTokens.length ? (
           <View style={styles.wrap}>
             {watchTokens.map((token) => (
@@ -79,29 +79,29 @@ export default function WatchlistRoute() {
             ))}
           </View>
         ) : (
-          <AppText variant="bodySmall">No active watch tokens yet. Add a few below to reshape Today.</AppText>
+          <AppText variant="bodySmall">You are not following anything yet. Add a few names or topics below.</AppText>
         )}
       </SectionCard>
 
       {strongest ? (
-        <SectionCard eyebrow="Watchlist leader" title={strongest.token}>
+        <SectionCard eyebrow="Top signal" title={strongest.token}>
           <View style={styles.heroMeta}>
             <View style={styles.scorePill}>
               <AppText variant="caption" style={styles.scorePillText}>
                 {strongest.average}/99 average fit
               </AppText>
             </View>
-            <AppText variant="bodySmall">{strongest.count} linked {strongest.count === 1 ? 'briefing' : 'briefings'}</AppText>
+            <AppText variant="bodySmall">{strongest.count} related {strongest.count === 1 ? 'story' : 'stories'}</AppText>
           </View>
-          <AppText variant="body">Lead signal: {strongest.strongestTitle}</AppText>
-          <AppText variant="bodySmall">Why it is floating up: {strongest.strongestReason}.</AppText>
+          <AppText variant="body">Status: {strongest.strongestReason}.</AppText>
+          <AppText variant="bodySmall">Lead story: {strongest.strongestTitle}</AppText>
           <View style={styles.intelStack}>
             <View style={styles.intelBlock}>
-              <AppText variant="caption">Likely beneficiaries</AppText>
+              <AppText variant="caption">Who may benefit</AppText>
               <TokenRow items={strongest.beneficiaries} tone="accent" />
             </View>
             <View style={styles.intelBlock}>
-              <AppText variant="caption">Pressure points</AppText>
+              <AppText variant="caption">Who may face pressure</AppText>
               <TokenRow items={strongest.pressurePoints} tone="danger" />
             </View>
             <View style={styles.intelBlock}>
@@ -113,14 +113,14 @@ export default function WatchlistRoute() {
             onPress={() => router.push(`/story/${strongest.strongestStoryId}`)}
             style={({ pressed }) => [styles.primaryCta, pressed && styles.ctaPressed]}>
             <AppText variant="body" style={styles.primaryCtaLabel}>
-              Open lead briefing
+              Open lead story
             </AppText>
           </Pressable>
         </SectionCard>
       ) : null}
 
       {activeWatchlist.length ? (
-        <SectionCard eyebrow="Radar" title="What each token is pulling into view">
+        <SectionCard eyebrow="Updates" title="What each followed item is surfacing right now">
           <View style={styles.radarList}>
             {activeWatchlist.map((item) => (
               <Pressable
@@ -130,7 +130,7 @@ export default function WatchlistRoute() {
                 <View style={styles.radarHeader}>
                   <View style={styles.radarCopy}>
                     <AppText variant="body">{item.token}</AppText>
-                    <AppText variant="bodySmall">{item.average}/99 fit · {item.strongestTopic}</AppText>
+                    <AppText variant="bodySmall">{item.strongestTopic}</AppText>
                   </View>
                   <View style={styles.radarCount}>
                     <AppText variant="caption" style={styles.radarCountText}>
@@ -138,8 +138,8 @@ export default function WatchlistRoute() {
                     </AppText>
                   </View>
                 </View>
-                <AppText variant="bodySmall">Lead briefing: {item.strongestTitle}</AppText>
-                <AppText variant="bodySmall">Watch: {item.watchItems.join(' · ')}</AppText>
+                <AppText variant="bodySmall">Status: {item.strongestReason}.</AppText>
+                <AppText variant="bodySmall">What to watch: {item.watchItems.join(' · ')}</AppText>
               </Pressable>
             ))}
           </View>
@@ -147,15 +147,15 @@ export default function WatchlistRoute() {
       ) : null}
 
       {blindSpots.length ? (
-        <SectionCard eyebrow="Coverage gaps" title="Tokens without a mapped briefing yet">
+        <SectionCard eyebrow="Still waiting" title="Followed items without a mapped story yet">
           <AppText variant="bodySmall">
-            These are on your watchlist, but the current editorial set does not map a story to them yet.
+            These are worth tracking, but the current story set does not connect them to a live story yet.
           </AppText>
           <TokenRow items={blindSpots.map((item) => item.token)} />
         </SectionCard>
       ) : null}
 
-      <SectionCard eyebrow="Suggestions" title="Quick adds from validated story data">
+      <SectionCard eyebrow="Suggestions" title="Add a few more to your Following list">
         <View style={styles.wrap}>
           {suggestions.map((token) => (
             <Chip key={token} label={token} active={watchTokens.includes(token)} onPress={() => toggleWatchToken(token)} />

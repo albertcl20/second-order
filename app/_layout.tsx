@@ -7,7 +7,7 @@ import 'react-native-reanimated';
 import { useAppStore } from '@/src/store/useAppStore';
 import { AppText } from '@/src/components/ui/AppText';
 import { colors, radius, spacing } from '@/src/theme/tokens';
-import { previewEnabled } from '@/src/lib/runtime-config';
+import { hiddenSigninSlug, previewEnabled } from '@/src/lib/runtime-config';
 
 SplashScreen.preventAutoHideAsync();
 
@@ -20,6 +20,7 @@ export default function RootLayout() {
   const segments = useSegments();
   const isMarketingRoute = segments[0] === undefined;
   const isOnboardingRoute = segments[0] === 'onboarding';
+  const isHiddenSigninRoute = segments[0] === hiddenSigninSlug;
 
   useEffect(() => {
     hydrate().finally(() => SplashScreen.hideAsync());
@@ -34,7 +35,7 @@ export default function RootLayout() {
     );
   }
 
-  if (!isMarketingRoute && !unlocked) {
+  if (!isMarketingRoute && !isHiddenSigninRoute && !unlocked) {
     return (
       <View style={styles.gateScreen}>
         <StatusBar style="dark" />
@@ -81,11 +82,12 @@ export default function RootLayout() {
         }}>
         <Stack.Screen name="(tabs)" />
         <Stack.Screen name="onboarding" options={{ headerShown: false, presentation: 'card' }} />
+        <Stack.Screen name={hiddenSigninSlug} options={{ headerShown: false, presentation: 'card' }} />
         <Stack.Screen
           name="story/[storyId]"
           options={{
             headerShown: true,
-            title: 'Briefing',
+            title: 'Story',
             presentation: 'card',
           }}
         />
