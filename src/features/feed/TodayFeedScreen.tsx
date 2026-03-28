@@ -1,23 +1,43 @@
+import { useMemo, useState } from 'react';
 import { View, StyleSheet, Pressable } from 'react-native';
 import { format } from 'date-fns';
 import { router } from 'expo-router';
 import { Screen } from '@/src/components/ui/Screen';
 import { AppText } from '@/src/components/ui/AppText';
+import { Chip } from '@/src/components/ui/Chip';
 import { StoryCard } from '@/src/components/ui/StoryCard';
 import { SectionCard } from '@/src/components/ui/SectionCard';
 import { colors, radius, spacing } from '@/src/theme/tokens';
-import { useAppStore } from '@/src/store/useAppStore';
+import { ReadingMode, useAppStore } from '@/src/store/useAppStore';
 import { latestBriefingDate } from '@/src/fixtures/story-feed';
 import { useBriefing } from '@/src/features/briefing/useBriefing';
 
 export function TodayFeedScreen() {
   const toggleSaved = useAppStore((state) => state.toggleSaved);
   const setSubscriptionTier = useAppStore((state) => state.setSubscriptionTier);
+  const readingMode = useAppStore((state) => state.readingMode);
   const { preferences, rankedStories, lens, themes, savedStories, dailySignal, access } = useBriefing();
-  const topThemes = access.visibleThemes.slice(0, 3);
-  const lead = access.visibleStories[0] ?? rankedStories[0];
-  const resumeStory = savedStories[0];
-  const upNext = access.visibleStories.slice(1, 3);
+  const [selectedTopic, setSelectedTopic] = useState<string>('All');
+
+  const topicChips = useMemo(() => {
+    const topics = [...new Set(access.visibleStories.map((story) => story.topic))];
+    return ['All', ...topics];
+  }, [access.visibleStories]);
+
+  const topicStories = useMemo(() => {
+    if (selectedTopic === 'All') return access.visibleStories;
+    return access.visibleStories.filter((story) => story.topic === selectedTopic);
+  }, [access.visibleStories, selectedTopic]);
+
+  const topicThemes = useMemo(() => {
+    if (selectedTopic === 'All') return access.visibleThemes;
+    return access.visibleThemes.filter((theme) => theme.label.toLowerCase() === selectedTopic.toLowerCase());
+  }, [access.visibleThemes, selectedTopic]);
+
+  const topThemes = topicThemes.slice(0, 3);
+  const lead = topicStories[0] ?? access.visibleStories[0] ?? rankedStories[0];
+  const resumeStory = selectedTopic === 'All' ? savedStories[0] : savedStories.find((story) => story.topic === selectedTopic) ?? savedStories[0];
+  const upNext = topicStories.slice(1, 3);
   const { roleFocus, interestFocus, watchTokens } = preferences;
 
   return (
@@ -28,13 +48,22 @@ export function TodayFeedScreen() {
         <AppText variant="body">
           Consequences, winners, losers, and what to watch — without the headline sludge.
         </AppText>
+        <View style={styles.modePill}>
+          <AppText variant="caption" style={styles.modePillText}>
+            {readingModeLabel(readingMode)}
+          </AppText>
+        </View>
       </View>
 
       <View style={styles.metricGrid}>
         <View style={styles.metricCard}>
           <AppText variant="caption">Lead topic</AppText>
-          <AppText variant="section">{lens.mostRelevantTopic ?? '—'}</AppText>
-          <AppText variant="bodySmall">Highest-signal theme for your current lens.</AppText>
+          <AppText variant="section">{selectedTopic === 'All' ? lens.mostRelevantTopic ?? '—' : selectedTopic}</AppText>
+          <AppText variant="bodySmall">
+            {selectedTopic === 'All'
+              ? 'Highest-signal theme for your current lens.'
+              : `Today filtered to ${topicStories.length} ${topicStories.length === 1 ? 'briefing' : 'briefings'} in this topic.`}
+          </AppText>
         </View>
         <View style={styles.metricCard}>
           <AppText variant="caption">Average fit</AppText>
@@ -42,6 +71,17 @@ export function TodayFeedScreen() {
           <AppText variant="bodySmall">Across {rankedStories.length} ranked stories today.</AppText>
         </View>
       </View>
+
+      <SectionCard eyebrow="Topic chips" title="Shift the feed without leaving Today">
+        <AppText variant="bodySmall">
+          Use topic chips to collapse the briefing around one narrative lane instead of scrolling the whole stack.
+        </AppText>
+        <View style={styles.topicChipRow}>
+          {topicChips.map((topic) => (
+            <Chip key={topic} label={topic} active={selectedTopic === topic} onPress={() => setSelectedTopic(topic)} />
+          ))}
+        </View>
+      </SectionCard>
 
       {!access.isPremium ? (
         <SectionCard eyebrow="Free plan" title={`You can read ${access.freeStoryLimit} full briefings per day on Free`}>
@@ -97,7 +137,7 @@ export function TodayFeedScreen() {
       ) : null}
 
       {lead ? (
-        <SectionCard eyebrow="Daily outlook" title="Where the signal is clustering right now">
+        <SectionCard eyebrow="Daily outlook" title={selectedTopic === 'All' ? 'Where the signal is clustering right now' : `Where ${selectedTopic} is moving next`}>
           <View style={styles.outlookRow}>
             <View style={styles.outlookPill}>
               <AppText variant="caption" style={styles.outlookPillText}>
@@ -149,7 +189,7 @@ export function TodayFeedScreen() {
       ) : null}
 
       {upNext.length ? (
-        <SectionCard eyebrow="Up next" title="Two more stories worth your attention">
+        <SectionCard eyebrow="Up next" title={selectedTopic === 'All' ? 'Two more stories worth your attention' : `Two more ${selectedTopic.toLowerCase()} briefings worth your attention`}>
           <View style={styles.upNextList}>
             {upNext.map((story, index) => (
               <Pressable key={story.id} onPress={() => router.push(`/story/${story.id}`)} style={({ pressed }) => [styles.upNextRow, pressed && styles.pressedRow]}>
@@ -168,18 +208,24 @@ export function TodayFeedScreen() {
         </SectionCard>
       ) : null}
 
-      <SectionCard eyebrow="Pattern scan" title="The narratives pulling to the top">
-        <View style={styles.themeList}>
-          {topThemes.map((theme) => (
-            <View key={theme.label} style={styles.themeRow}>
-              <View style={styles.themeCopy}>
-                <AppText variant="body">{theme.label}</AppText>
-                <AppText variant="bodySmall">Strongest entry: {theme.strongest}</AppText>
+      <SectionCard eyebrow="Pattern scan" title={selectedTopic === 'All' ? 'The narratives pulling to the top' : `Narratives inside ${selectedTopic}`}>
+        {topThemes.length ? (
+          <View style={styles.themeList}>
+            {topThemes.map((theme) => (
+              <View key={theme.label} style={styles.themeRow}>
+                <View style={styles.themeCopy}>
+                  <AppText variant="body">{theme.label}</AppText>
+                  <AppText variant="bodySmall">Strongest entry: {theme.strongest}</AppText>
+                </View>
+                <AppText variant="caption">{theme.average}/99</AppText>
               </View>
-              <AppText variant="caption">{theme.average}/99</AppText>
-            </View>
-          ))}
-        </View>
+            ))}
+          </View>
+        ) : (
+          <AppText variant="bodySmall">
+            No filtered theme cluster mapped yet for this topic. Switch back to All to widen the narrative map.
+          </AppText>
+        )}
       </SectionCard>
 
       <SectionCard eyebrow="Desk status" title="How your session is shaping up">
@@ -201,7 +247,7 @@ export function TodayFeedScreen() {
       </SectionCard>
 
       <View style={styles.list}>
-        {access.visibleStories.map((story) => (
+        {topicStories.map((story) => (
           <StoryCard
             key={story.id}
             story={story}
@@ -233,14 +279,37 @@ export function TodayFeedScreen() {
   );
 }
 
+function readingModeLabel(readingMode: ReadingMode) {
+  if (readingMode === 'Concise') return 'Reading mode · Concise scan';
+  if (readingMode === 'Deep dive') return 'Reading mode · Deep dive';
+  return 'Reading mode · Standard';
+}
+
 const styles = StyleSheet.create({
   hero: {
     gap: spacing.md,
     paddingTop: spacing.sm,
   },
+  modePill: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: radius.pill,
+    backgroundColor: colors.surfaceMuted,
+  },
+  modePillText: {
+    color: colors.text,
+    textTransform: 'none',
+    letterSpacing: 0,
+  },
   metricGrid: {
     flexDirection: 'row',
     gap: spacing.md,
+  },
+  topicChipRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
   },
   metricCard: {
     flex: 1,
