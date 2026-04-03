@@ -9,6 +9,8 @@ import { colors, radius, spacing } from '@/src/theme/tokens';
 import { RankedStory } from '@/src/lib/story-intelligence';
 import { useAppStore } from '@/src/store/useAppStore';
 import { useBriefing } from '@/src/features/briefing/useBriefing';
+import { ReactNode, useEffect, useState } from 'react';
+import { getStoryDecisionSummary } from '@/src/lib/story-intelligence';
 
 function BulletList({ items }: { items: string[] }) {
   return (
@@ -23,7 +25,7 @@ function BulletList({ items }: { items: string[] }) {
   );
 }
 
-function Section({ label, children }: { label: string; children: React.ReactNode }) {
+function Section({ label, children }: { label: string; children: ReactNode }) {
   return (
     <View style={styles.section}>
       <AppText variant="caption">{label}</AppText>
@@ -32,12 +34,33 @@ function Section({ label, children }: { label: string; children: React.ReactNode
   );
 }
 
-function SignalCard({ label, value }: { label: string; value: number }) {
+function ExpandableSection({
+  label,
+  preview,
+  initiallyExpanded = false,
+  children,
+}: {
+  label: string;
+  preview: string;
+  initiallyExpanded?: boolean;
+  children: ReactNode;
+}) {
+  const [expanded, setExpanded] = useState(initiallyExpanded);
+
+  useEffect(() => {
+    setExpanded(initiallyExpanded);
+  }, [initiallyExpanded]);
+
   return (
-    <View style={styles.signalCard}>
-      <AppText variant="caption">{label}</AppText>
-      <AppText variant="section">{value}</AppText>
-      <AppText variant="bodySmall">Signal strength</AppText>
+    <View style={styles.expandableSection}>
+      <Pressable onPress={() => setExpanded((value) => !value)} style={({ pressed }) => [styles.expandableHeader, pressed && styles.expandablePressed]}>
+        <View style={styles.expandableCopy}>
+          <AppText variant="caption">{label}</AppText>
+          <AppText variant="bodySmall" style={styles.expandablePreview}>{preview}</AppText>
+        </View>
+        <AppText variant="bodySmall" style={styles.expandableAction}>{expanded ? 'Hide' : 'Show'}</AppText>
+      </Pressable>
+      {expanded ? <View style={styles.expandableBody}>{children}</View> : null}
     </View>
   );
 }
@@ -46,16 +69,13 @@ export function StoryDetailScreen({ story }: { story: RankedStory }) {
   const toggleSaved = useAppStore((state) => state.toggleSaved);
   const toggleWatchToken = useAppStore((state) => state.toggleWatchToken);
   const watchTokens = useAppStore((state) => state.watchTokens);
-  const { rankedStories } = useBriefing();
-  const relatedStories = rankedStories
-    .filter((item) => item.id !== story.id)
-    .sort((left, right) => {
-      const leftSharedTopic = Number(left.topic === story.topic);
-      const rightSharedTopic = Number(right.topic === story.topic);
-      return rightSharedTopic - leftSharedTopic || right.relevanceScore - left.relevanceScore;
-    })
-    .slice(0, 2);
-  const strongestSignal = Object.entries(story.signals).sort((a, b) => b[1] - a[1])[0];
+  const readingMode = useAppStore((state) => state.readingMode);
+  const { rankedStories, preferences } = useBriefing();
+  const relatedStories = rankedStories.filter((item) => item.id !== story.id && item.topic === story.topic).slice(0, 2);
+  const confidenceLabel = mapConfidence(story.analysis.confidence);
+  const decision = getStoryDecisionSummary(story, preferences);
+  const showDecisionView = readingMode !== 'Concise';
+  const expandDeepSections = readingMode === 'Deep dive';
 
   return (
     <Screen scroll>
@@ -69,6 +89,10 @@ export function StoryDetailScreen({ story }: { story: RankedStory }) {
           <AppText variant="bodySmall">{story.readingTime} min</AppText>
         </View>
         <AppText variant="title">{story.title}</AppText>
+      </View>
+
+      <View style={styles.oneLineCard}>
+        <AppText variant="caption">In one line</AppText>
         <AppText variant="body">{story.summary}</AppText>
       </View>
 
@@ -77,38 +101,25 @@ export function StoryDetailScreen({ story }: { story: RankedStory }) {
           onPress={() => toggleSaved(story.id)}
           style={({ pressed }) => [styles.primaryAction, story.isSaved && styles.primaryActionSaved, pressed && styles.primaryActionPressed]}>
           <AppText variant="body" style={styles.primaryActionLabel}>
-            {story.isSaved ? 'Saved to desk' : 'Save to desk'}
+            {story.isSaved ? 'Saved' : 'Save'}
           </AppText>
         </Pressable>
         <Pressable
           onPress={() => router.push({ pathname: '/modal/source-sheet', params: { storyId: story.id } })}
           style={({ pressed }) => [styles.secondaryAction, pressed && styles.secondaryActionPressed]}>
           <AppText variant="bodySmall" style={styles.secondaryActionLabel}>
-            Review sources
+            Sources
           </AppText>
         </Pressable>
       </View>
 
-      <View style={styles.summaryGrid}>
-        <View style={styles.summaryCard}>
-          <AppText variant="caption">Relevance</AppText>
-          <AppText variant="section">{story.relevanceScore}/99</AppText>
-          <AppText variant="bodySmall">Ranked against your current lens.</AppText>
-        </View>
-        <View style={styles.summaryCard}>
-          <AppText variant="caption">Strongest signal</AppText>
-          <AppText variant="section">{formatSignalLabel(strongestSignal[0])}</AppText>
-          <AppText variant="bodySmall">{strongestSignal[1]}/100 intensity.</AppText>
-        </View>
-      </View>
-
       <View style={styles.trustCard}>
         <View style={styles.trustHeader}>
-          <AppText variant="caption">Trust cues</AppText>
+          <AppText variant="caption">How to read this</AppText>
           <Link href="/settings/methodology" asChild>
             <Pressable>
               <AppText variant="bodySmall" style={styles.inlineLink}>
-                Open methodology
+                Read the method
               </AppText>
             </Pressable>
           </Link>
@@ -116,79 +127,18 @@ export function StoryDetailScreen({ story }: { story: RankedStory }) {
         <View style={styles.trustGrid}>
           <View style={styles.trustPanel}>
             <AppText variant="body" style={styles.trustTitle}>
-              Reporting
+              What we know
             </AppText>
-            <AppText variant="bodySmall">What happened is grounded in the source set and dated event context.</AppText>
+            <AppText variant="bodySmall">The basic facts come from the linked reporting and source material.</AppText>
           </View>
           <View style={styles.trustPanel}>
             <AppText variant="body" style={styles.trustTitle}>
-              Inference
+              What we think it means
             </AppText>
-            <AppText variant="bodySmall">Why it matters and what happens next are explicit judgment calls, not disguised facts.</AppText>
+            <AppText variant="bodySmall">The impact, winners, losers, and next steps are analysis. They are not presented as fact.</AppText>
           </View>
         </View>
       </View>
-
-      <View style={styles.confidenceBanner}>
-        <AppText variant="caption">Why this matters to you</AppText>
-        <AppText variant="body">{story.analysis.whyItMatters}</AppText>
-        <View style={styles.tagWrap}>
-          {story.relevanceReasons.map((reason) => (
-            <Chip key={reason} label={reason} active />
-          ))}
-        </View>
-      </View>
-
-      <Section label="At a glance">
-        <View style={styles.glanceRow}>
-          <View style={styles.glanceCard}>
-            <AppText variant="caption">Beneficiaries</AppText>
-            <AppText variant="section">{story.analysis.whoBenefits.length}</AppText>
-            <AppText variant="bodySmall">Likely winners called out</AppText>
-          </View>
-          <View style={styles.glanceCard}>
-            <AppText variant="caption">Watch items</AppText>
-            <AppText variant="section">{story.analysis.whatToWatch.length}</AppText>
-            <AppText variant="bodySmall">Signals to keep tracking</AppText>
-          </View>
-        </View>
-      </Section>
-
-      <Section label="Signal map">
-        <View style={styles.signalGrid}>
-          <SignalCard label="Market" value={story.signals.market} />
-          <SignalCard label="Product" value={story.signals.product} />
-          <SignalCard label="Risk" value={story.signals.operatingRisk} />
-          <SignalCard label="Distribution" value={story.signals.distribution} />
-        </View>
-      </Section>
-
-      <Section label="Add to watchlist">
-        <View style={styles.tagWrap}>
-          {story.watchTokens.map((token) => (
-            <Chip
-              key={token}
-              label={token}
-              active={watchTokens.includes(token)}
-              onPress={() => toggleWatchToken(token)}
-            />
-          ))}
-        </View>
-      </Section>
-
-      <Section label="Confidence / uncertainty">
-        <View style={styles.confidenceBanner}>
-          <View style={styles.confidenceHeader}>
-            <View style={[styles.confidencePill, styleConfidencePill(story.analysis.confidence)]}>
-              <AppText variant="bodySmall" style={styles.confidencePillText}>
-                {story.analysis.confidence}
-              </AppText>
-            </View>
-            <AppText variant="bodySmall">{story.sources.length} sources linked</AppText>
-          </View>
-          <AppText variant="bodySmall">{story.analysis.uncertainty}</AppText>
-        </View>
-      </Section>
 
       <Section label="What happened">
         <AppText variant="body">{story.analysis.whatHappened}</AppText>
@@ -198,30 +148,73 @@ export function StoryDetailScreen({ story }: { story: RankedStory }) {
         <AppText variant="body">{story.analysis.whyItMatters}</AppText>
       </Section>
 
-      <Section label="Who benefits">
-        <BulletList items={story.analysis.whoBenefits} />
-      </Section>
-
-      <Section label="Who loses">
-        <BulletList items={story.analysis.whoLoses} />
-      </Section>
-
-      <Section label="What happens next">
-        <BulletList items={story.analysis.whatHappensNext} />
-      </Section>
-
       <Section label="What to watch">
         <BulletList items={story.analysis.whatToWatch} />
       </Section>
 
-      <Section label="Opportunity / risk">
+      {showDecisionView ? (
+        <Section label="Decision view">
+          <View style={styles.decisionCard}>
+            <View style={styles.decisionHeader}>
+              <View style={styles.decisionPill}>
+                <AppText variant="bodySmall" style={styles.decisionPillText}>
+                  {decision.posture}
+                </AppText>
+              </View>
+              <AppText variant="bodySmall">Based on your current profile and followed topics</AppText>
+            </View>
+            <AppText variant="body">{decision.postureReason}</AppText>
+            <View style={styles.decisionList}>
+              <AppText variant="bodySmall">{decision.watchlistLine}</AppText>
+              <AppText variant="bodySmall">{decision.actionLine}</AppText>
+              <AppText variant="bodySmall">{decision.triggerLine}</AppText>
+            </View>
+          </View>
+        </Section>
+      ) : null}
+
+      <ExpandableSection label="Who benefits" preview={story.analysis.whoBenefits[0] ?? 'See likely winners'} initiallyExpanded={expandDeepSections}>
+        <BulletList items={story.analysis.whoBenefits} />
+      </ExpandableSection>
+
+      <ExpandableSection label="Who loses" preview={story.analysis.whoLoses[0] ?? 'See likely losers'} initiallyExpanded={expandDeepSections}>
+        <BulletList items={story.analysis.whoLoses} />
+      </ExpandableSection>
+
+      <ExpandableSection label="What happens next" preview={story.analysis.whatHappensNext[0] ?? 'See the next likely move'} initiallyExpanded={expandDeepSections}>
+        <BulletList items={story.analysis.whatHappensNext} />
+      </ExpandableSection>
+
+      <ExpandableSection label="Opportunity / risk" preview={story.analysis.opportunityRisk} initiallyExpanded={expandDeepSections}>
         <View style={styles.opportunityCard}>
           <AppText variant="body">{story.analysis.opportunityRisk}</AppText>
+        </View>
+      </ExpandableSection>
+
+      <Section label="Confidence and uncertainty">
+        <View style={styles.confidenceBanner}>
+          <View style={styles.confidenceHeader}>
+            <View style={[styles.confidencePill, styleConfidencePill(story.analysis.confidence)]}>
+              <AppText variant="bodySmall" style={styles.confidencePillText}>
+                {confidenceLabel}
+              </AppText>
+            </View>
+            <AppText variant="bodySmall">{story.sources.length} sources linked</AppText>
+          </View>
+          <AppText variant="bodySmall">{story.analysis.uncertainty}</AppText>
+        </View>
+      </Section>
+
+      <Section label="Follow this story">
+        <View style={styles.tagWrap}>
+          {story.watchTokens.map((token) => (
+            <Chip key={token} label={token} active={watchTokens.includes(token)} onPress={() => toggleWatchToken(token)} />
+          ))}
         </View>
       </Section>
 
       {relatedStories.length ? (
-        <Section label="Keep reading">
+        <Section label="Related stories">
           <View style={styles.relatedList}>
             {relatedStories.map((relatedStory) => (
               <StoryCard key={relatedStory.id} story={relatedStory} onToggleSaved={toggleSaved} />
@@ -232,7 +225,7 @@ export function StoryDetailScreen({ story }: { story: RankedStory }) {
 
       <Section label="Sources">
         <View style={styles.sourcesHeader}>
-          <AppText variant="bodySmall">Primary references and reporting used in this mock briefing.</AppText>
+          <AppText variant="bodySmall">Open the source set if you want to check the reporting behind this story.</AppText>
         </View>
         <View style={styles.sources}>
           {story.sources.map((source) => (
@@ -250,9 +243,10 @@ export function StoryDetailScreen({ story }: { story: RankedStory }) {
   );
 }
 
-function formatSignalLabel(signal: string) {
-  if (signal === 'operatingRisk') return 'Risk';
-  return `${signal.charAt(0).toUpperCase()}${signal.slice(1)}`;
+function mapConfidence(confidence: string) {
+  if (confidence === 'High confidence') return 'High confidence';
+  if (confidence === 'Plausible') return 'Medium confidence';
+  return 'Low confidence';
 }
 
 function styleConfidencePill(confidence: string) {
@@ -282,6 +276,12 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     borderRadius: radius.pill,
     backgroundColor: colors.surfaceMuted,
+  },
+  oneLineCard: {
+    padding: spacing.xl,
+    borderRadius: radius.lg,
+    backgroundColor: colors.surfaceMuted,
+    gap: spacing.sm,
   },
   actionRow: {
     flexDirection: 'row',
@@ -319,19 +319,6 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontWeight: '600',
   },
-  summaryGrid: {
-    flexDirection: 'row',
-    gap: spacing.md,
-  },
-  summaryCard: {
-    flex: 1,
-    padding: spacing.lg,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.surface,
-    gap: spacing.xs,
-  },
   trustCard: {
     padding: spacing.xl,
     borderRadius: radius.lg,
@@ -362,6 +349,86 @@ const styles = StyleSheet.create({
   trustTitle: {
     fontWeight: '700',
   },
+  section: {
+    gap: spacing.sm,
+  },
+  list: {
+    gap: spacing.sm,
+  },
+  listItem: {
+    flexDirection: 'row',
+    gap: spacing.md,
+    alignItems: 'flex-start',
+  },
+  dot: {
+    width: 8,
+    height: 8,
+    borderRadius: 999,
+    backgroundColor: colors.text,
+    marginTop: 8,
+  },
+  expandableSection: {
+    gap: spacing.sm,
+    padding: spacing.lg,
+    borderRadius: radius.lg,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  expandableHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: spacing.md,
+  },
+  expandablePressed: {
+    opacity: 0.82,
+  },
+  expandableCopy: {
+    flex: 1,
+    gap: spacing.xs,
+  },
+  expandablePreview: {
+    color: colors.textSecondary,
+  },
+  expandableAction: {
+    color: colors.text,
+    fontWeight: '600',
+  },
+  expandableBody: {
+    paddingTop: spacing.xs,
+  },
+  opportunityCard: {
+    padding: spacing.lg,
+    borderRadius: radius.md,
+    backgroundColor: colors.surfaceMuted,
+  },
+  decisionCard: {
+    padding: spacing.xl,
+    borderRadius: radius.lg,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    gap: spacing.md,
+  },
+  decisionHeader: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.md,
+    alignItems: 'center',
+  },
+  decisionPill: {
+    borderRadius: radius.pill,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    backgroundColor: colors.accentSoft,
+  },
+  decisionPillText: {
+    color: colors.accent,
+    fontWeight: '700',
+  },
+  decisionList: {
+    gap: spacing.sm,
+  },
   confidenceBanner: {
     padding: spacing.xl,
     borderRadius: radius.lg,
@@ -384,58 +451,13 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontWeight: '700',
   },
-  glanceRow: {
-    flexDirection: 'row',
-    gap: spacing.md,
-  },
-  glanceCard: {
-    flex: 1,
-    padding: spacing.lg,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.surface,
-    gap: spacing.xs,
-  },
-  signalGrid: {
+  tagWrap: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: spacing.md,
-  },
-  signalCard: {
-    minWidth: '47%',
-    flexGrow: 1,
-    padding: spacing.lg,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.surface,
-    gap: spacing.xs,
-  },
-  opportunityCard: {
-    padding: spacing.lg,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.surface,
-  },
-  section: {
     gap: spacing.sm,
   },
-  list: {
-    gap: spacing.sm,
-  },
-  listItem: {
-    flexDirection: 'row',
-    gap: spacing.md,
-    alignItems: 'flex-start',
-  },
-  dot: {
-    width: 8,
-    height: 8,
-    borderRadius: 999,
-    backgroundColor: colors.text,
-    marginTop: 8,
+  relatedList: {
+    gap: spacing.lg,
   },
   sourcesHeader: {
     paddingHorizontal: spacing.xs,
@@ -455,13 +477,5 @@ const styles = StyleSheet.create({
   sourceCopy: {
     flex: 1,
     gap: spacing.xs,
-  },
-  tagWrap: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing.sm,
-  },
-  relatedList: {
-    gap: spacing.lg,
   },
 });

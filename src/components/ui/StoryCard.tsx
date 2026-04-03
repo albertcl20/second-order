@@ -5,6 +5,7 @@ import { AppText } from '@/src/components/ui/AppText';
 import { Chip } from '@/src/components/ui/Chip';
 import { colors, radius, spacing } from '@/src/theme/tokens';
 import { RankedStory } from '@/src/lib/story-intelligence';
+import { useAppStore } from '@/src/store/useAppStore';
 
 export function StoryCard({
   story,
@@ -18,10 +19,11 @@ export function StoryCard({
   saveDisabled?: boolean;
 }) {
   const { width } = useWindowDimensions();
+  const readingMode = useAppStore((state) => state.readingMode);
   const isCompact = width < 390;
-  const isUltraCompact = width < 360;
-  const visibleReasons = story.relevanceReasons.slice(0, isUltraCompact ? 2 : 3);
-  const hiddenReasons = story.relevanceReasons.length - visibleReasons.length;
+  const visibleReasons = story.relevanceReasons.slice(0, readingMode === 'Concise' ? 1 : readingMode === 'Deep dive' ? 3 : 2);
+  const summaryLines = readingMode === 'Deep dive' ? 3 : 2;
+  const titleLines = readingMode === 'Concise' ? 2 : 3;
 
   const handleSavePress = (event: GestureResponderEvent) => {
     event.stopPropagation();
@@ -39,9 +41,13 @@ export function StoryCard({
         premium && styles.premiumCard,
         pressed && styles.cardPressed,
       ]}>
-      <View style={styles.header}>
-        <AppText variant="caption" numberOfLines={1} style={styles.kickerText}>{story.kicker}</AppText>
-        <View style={styles.headerMetaActions}>
+      <View style={styles.topRow}>
+        <View style={styles.topicPill}>
+          <AppText variant="caption" style={styles.topicText}>
+            {story.topic}
+          </AppText>
+        </View>
+        <View style={styles.metaRow}>
           {premium ? (
             <View style={styles.premiumBadge}>
               <AppText variant="caption" style={styles.premiumBadgeText}>
@@ -49,42 +55,40 @@ export function StoryCard({
               </AppText>
             </View>
           ) : null}
-          <AppText variant="caption" style={styles.readingTimeText}>{story.readingTime} min</AppText>
+          <AppText variant="bodySmall" style={styles.metaText}>
+            {format(new Date(story.publishedAt), 'd MMM')}
+          </AppText>
+          <AppText variant="bodySmall" style={styles.metaText}>
+            {story.readingTime} min
+          </AppText>
         </View>
-      </View>
-
-      <View style={styles.metaRow}>
-        <View style={styles.metaBadge}>
-          <AppText variant="bodySmall" numberOfLines={1}>{story.topic}</AppText>
-        </View>
-        <AppText variant="bodySmall">{format(new Date(story.publishedAt), 'd MMM')}</AppText>
       </View>
 
       <View style={styles.copyBlock}>
-        <AppText variant="section" numberOfLines={isCompact ? 2 : 3}>{story.title}</AppText>
-        <AppText variant="bodySmall" numberOfLines={isCompact ? 2 : 3}>{story.summary}</AppText>
+        <AppText variant="section" numberOfLines={titleLines}>
+          {story.title}
+        </AppText>
+        <View style={styles.whyBlock}>
+          <AppText variant="caption" style={styles.whyLabel}>
+            Why this matters
+          </AppText>
+          <AppText variant="bodySmall" numberOfLines={summaryLines} style={styles.summaryText}>
+            {story.summary}
+          </AppText>
+        </View>
       </View>
 
-      <View style={[styles.relevanceRow, isCompact && styles.relevanceRowCompact]}>
-        <View style={[styles.scoreBubble, isCompact && styles.scoreBubbleCompact]}>
-          <AppText variant="caption" style={styles.scoreLabel}>
-            {story.relevanceScore}
-          </AppText>
-          <AppText variant="caption" style={styles.scoreSuffix}>
-            fit
-          </AppText>
-        </View>
-        <View style={styles.reasonWrap}>
-          {visibleReasons.map((reason) => (
-            <Chip key={reason} label={reason} />
-          ))}
-          {hiddenReasons > 0 ? <Chip label={`+${hiddenReasons} more`} /> : null}
-        </View>
+      <View style={styles.chipRow}>
+        {visibleReasons.map((reason) => (
+          <Chip key={reason} label={reason} />
+        ))}
       </View>
 
       <View style={styles.footer}>
-        <View style={styles.badge}>
-          <AppText variant="caption" numberOfLines={1} style={styles.confidenceText}>{story.analysis.confidence}</AppText>
+        <View style={[styles.confidencePill, confidenceStyle(story.analysis.confidence)]}>
+          <AppText variant="caption" style={styles.confidenceText}>
+            {mapConfidence(story.analysis.confidence)}
+          </AppText>
         </View>
         <Pressable
           onPress={handleSavePress}
@@ -105,6 +109,18 @@ export function StoryCard({
   );
 }
 
+function mapConfidence(confidence: string) {
+  if (confidence === 'High confidence') return 'High confidence';
+  if (confidence === 'Plausible') return 'Medium confidence';
+  return 'Low confidence';
+}
+
+function confidenceStyle(confidence: string) {
+  if (confidence === 'High confidence') return { backgroundColor: '#DFF4E7' };
+  if (confidence === 'Plausible') return { backgroundColor: '#F7E6C9' };
+  return { backgroundColor: '#E7E0F8' };
+}
+
 const styles = StyleSheet.create({
   card: {
     backgroundColor: colors.surface,
@@ -121,7 +137,6 @@ const styles = StyleSheet.create({
   },
   cardCompact: {
     padding: spacing.lg,
-    gap: spacing.sm,
   },
   savedCard: {
     borderColor: colors.accent,
@@ -133,20 +148,32 @@ const styles = StyleSheet.create({
     opacity: 0.9,
     transform: [{ scale: 0.995 }],
   },
-  header: {
+  topRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     gap: spacing.sm,
+    flexWrap: 'wrap',
   },
-  headerMetaActions: {
+  topicPill: {
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 6,
+    borderRadius: radius.pill,
+    backgroundColor: colors.surfaceMuted,
+  },
+  topicText: {
+    color: colors.text,
+    textTransform: 'none',
+    letterSpacing: 0,
+  },
+  metaRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
-    flexShrink: 0,
+    flexWrap: 'wrap',
   },
-  kickerText: {
-    flex: 1,
+  metaText: {
+    color: colors.textSecondary,
   },
   premiumBadge: {
     paddingHorizontal: spacing.sm,
@@ -159,84 +186,43 @@ const styles = StyleSheet.create({
     textTransform: 'none',
     letterSpacing: 0,
   },
-  readingTimeText: {
-    flexShrink: 0,
-  },
-  metaRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+  copyBlock: {
     gap: spacing.md,
   },
-  metaBadge: {
-    flexShrink: 1,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 6,
-    borderRadius: radius.pill,
-    backgroundColor: colors.surfaceMuted,
-  },
-  copyBlock: {
+  whyBlock: {
     gap: spacing.xs,
   },
-  relevanceRow: {
-    flexDirection: 'row',
-    gap: spacing.md,
-    alignItems: 'center',
-  },
-  relevanceRowCompact: {
-    alignItems: 'flex-start',
-  },
-  scoreBubble: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
-    backgroundColor: colors.accentSoft,
-    justifyContent: 'center',
-    alignItems: 'center',
-    gap: 1,
-  },
-  scoreBubbleCompact: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-  },
-  scoreLabel: {
-    color: colors.accent,
+  whyLabel: {
+    color: colors.textSecondary,
     textTransform: 'none',
     letterSpacing: 0,
-    lineHeight: 14,
+    fontWeight: '700',
   },
-  scoreSuffix: {
-    color: colors.accent,
-    textTransform: 'none',
-    letterSpacing: 0,
-    lineHeight: 12,
-    fontSize: 10,
+  summaryText: {
+    color: colors.textSecondary,
+    lineHeight: 22,
   },
-  reasonWrap: {
+  chipRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: spacing.sm,
-    flex: 1,
   },
   footer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginTop: spacing.xs,
     gap: spacing.md,
   },
-  badge: {
-    flex: 1,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 6,
+  confidencePill: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
     borderRadius: radius.pill,
-    backgroundColor: colors.accentSoft,
   },
   confidenceText: {
-    color: colors.accent,
+    color: colors.text,
     textTransform: 'none',
     letterSpacing: 0,
+    fontWeight: '700',
   },
   saveAction: {
     paddingHorizontal: spacing.md,
